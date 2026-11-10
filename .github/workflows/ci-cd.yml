@@ -34,7 +34,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libgl1-mesa-glx
+          # libgl1-mesa-glx is deprecated in Ubuntu 26.04+; use libgl1 instead
+          sudo apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libgl1
 
       - name: Install Python dependencies
         run: |
