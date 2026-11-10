@@ -20,12 +20,13 @@ FROM python:3.12-slim AS runtime
 WORKDIR /app
 
 # Install OpenCV runtime dependencies (minimal)
+# Note: libgl1-mesa-glx is deprecated in Ubuntu 26.04+; use libgl1 instead
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
-    libgl1-mesa-glx \
+    libgl1 \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
