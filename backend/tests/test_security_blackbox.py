@@ -19,7 +19,6 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import patch
 
 from app.main import app
@@ -33,9 +32,11 @@ def isolated_gallery(tmp_path, monkeypatch):
     yield
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
+# Client fixtures are now defined in conftest.py
+# - client: unauthenticated (for public endpoints)
+# - auth_client: Operator role (for analyze endpoints)
+# - admin_client: Admin role (for enroll/delete)
+# - service_client: Service role (full access)
 
 
 @pytest.fixture
@@ -64,46 +65,46 @@ def _fake_detected_face(img_shape=(300, 300)) -> DetectedFace:
 
 # --- 1. Upload validation -------------------------------------------------
 
-def test_analyze_image_rejects_wrong_extension(client):
-    resp = client.post(
+def test_analyze_image_rejects_wrong_extension(auth_client):
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("not_an_image.txt", b"hello world", "text/plain")},
     )
     assert resp.status_code == 400
 
 
-def test_analyze_image_rejects_corrupt_file_with_valid_extension(client, invalid_image_bytes):
-    resp = client.post(
+def test_analyze_image_rejects_corrupt_file_with_valid_extension(auth_client, invalid_image_bytes):
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("looks_legit.jpg", invalid_image_bytes, "image/jpeg")},
     )
     assert resp.status_code == 400
 
 
-def test_analyze_image_rejects_empty_file(client):
-    resp = client.post(
+def test_analyze_image_rejects_empty_file(auth_client):
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("empty.jpg", b"", "image/jpeg")},
     )
     assert resp.status_code == 400
 
 
-def test_analyze_image_rejects_oversized_upload(client, monkeypatch):
+def test_analyze_image_rejects_oversized_upload(auth_client, monkeypatch):
     from app.core import config
 
     monkeypatch.setattr(config.settings, "max_upload_size_mb", 1)
     oversized = b"\xff" * (2 * 1024 * 1024)  # 2MB body, 1MB cap
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("big.jpg", oversized, "image/jpeg")},
     )
     assert resp.status_code == 413
 
 
-def test_analyze_image_rejects_uppercase_and_double_extensions(client):
+def test_analyze_image_rejects_uppercase_and_double_extensions(auth_client):
     # Case-insensitivity: a real image under a SHOUTY extension should still
     # be accepted at the validation layer (then succeed or fail on content).
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("photo.JPG", b"not a real jpeg", "image/jpeg")},
     )
@@ -112,7 +113,7 @@ def test_analyze_image_rejects_uppercase_and_double_extensions(client):
 
     # A disguised executable (double extension, real extension is .exe) must
     # be rejected at the extension gate, regardless of the first-looking part.
-    resp2 = client.post(
+    resp2 = auth_client.post(
         "/api/analyze/image",
         files={"file": ("photo.jpg.exe", b"MZ\x90\x00fake-pe-header", "application/octet-stream")},
     )
@@ -120,9 +121,9 @@ def test_analyze_image_rejects_uppercase_and_double_extensions(client):
     assert "unsupported file type" in resp2.json()["detail"].lower()
 
 
-def test_analyze_image_rejects_missing_filename(client):
+def test_analyze_image_rejects_missing_filename(auth_client):
     # Some HTTP clients can be coerced into sending no filename at all.
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("", b"some bytes", "application/octet-stream")},
     )
@@ -131,7 +132,7 @@ def test_analyze_image_rejects_missing_filename(client):
 
 # --- 2. Decompression-bomb protection ------------------------------------
 
-def test_analyze_image_rejects_decompression_bomb(client):
+def test_analyze_image_rejects_decompression_bomb(auth_client):
     """A file that's small on disk but enormous once decoded must be
     rejected before it reaches any model -- see
     app/security/validation.py:reject_oversized_decoded_image."""
@@ -141,7 +142,7 @@ def test_analyze_image_rejects_decompression_bomb(client):
     file_bytes = buf.tobytes()
     assert len(file_bytes) < 5 * 1024 * 1024  # proves it's small on disk
 
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("bomb.png", file_bytes, "image/png")},
     )
@@ -149,7 +150,7 @@ def test_analyze_image_rejects_decompression_bomb(client):
     assert "decompression" in resp.json()["detail"].lower() or "exceeds" in resp.json()["detail"].lower()
 
 
-def test_analyze_image_accepts_a_large_but_reasonable_photo(client):
+def test_analyze_image_accepts_a_large_but_reasonable_photo(auth_client):
     """The fix must not be so aggressive it rejects a legitimate large photo
     (e.g. a modern phone/DSLR shot) -- this one sits just under both caps."""
     from app.core.config import settings
@@ -160,19 +161,19 @@ def test_analyze_image_accepts_a_large_but_reasonable_photo(client):
     ok, buf = cv2.imencode(".jpg", img)
     assert ok
 
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("big_but_fine.jpg", buf.tobytes(), "image/jpeg")},
     )
     assert resp.status_code == 200
 
 
-def test_enroll_image_also_rejects_decompression_bomb(client):
+def test_enroll_image_also_rejects_decompression_bomb(admin_client):
     huge = np.full((15000, 15000, 3), 128, dtype=np.uint8)
     ok, buf = cv2.imencode(".png", huge, [cv2.IMWRITE_PNG_COMPRESSION, 9])
     assert ok
 
-    resp = client.post(
+    resp = admin_client.post(
         "/api/faces/enroll",
         files={"file": ("bomb.png", buf.tobytes(), "image/png")},
         data={"name": "Someone", "consent_confirmed": "true"},
@@ -191,7 +192,7 @@ def test_enroll_image_also_rejects_decompression_bomb(client):
         "....//....//etc/passwd.jpg",
     ],
 )
-def test_uploaded_filename_cannot_escape_temp_dir(client, blank_jpg_bytes, malicious_filename):
+def test_uploaded_filename_cannot_escape_temp_dir(auth_client, blank_jpg_bytes, malicious_filename):
     """The server must generate its own temp filename regardless of what the
     client claims the file is called -- see validation.py's docstring point
     2. We can't inspect the server's filesystem from here (that would be
@@ -199,7 +200,7 @@ def test_uploaded_filename_cannot_escape_temp_dir(client, blank_jpg_bytes, malic
     succeeds normally (proving the traversal-looking name was treated as
     inert data) or fails with an ordinary validation error -- never a 500,
     and never any sign the path was honored."""
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": (malicious_filename, blank_jpg_bytes, "image/jpeg")},
     )
@@ -210,17 +211,17 @@ def test_uploaded_filename_cannot_escape_temp_dir(client, blank_jpg_bytes, malic
     "malicious_face_id",
     ["..", "...", "..%2F..%2Fetc%2Fpasswd", "' OR '1'='1", "<script>alert(1)</script>", "a" * 5000],
 )
-def test_delete_with_malicious_face_id_is_safely_not_found(client, malicious_face_id):
+def test_delete_with_malicious_face_id_is_safely_not_found(admin_client, malicious_face_id):
     """None of these should ever match a real enrolled UUID, so the only
     correct behavior is 404 -- never a 500, never a different status that
     would suggest the string was interpreted as a path or query fragment."""
-    resp = client.delete(f"/api/faces/{malicious_face_id}")
+    resp = admin_client.delete(f"/api/faces/{malicious_face_id}")
     assert resp.status_code == 404
 
 
 # --- 4. Enrollment input validation ---------------------------------------
 
-def test_enroll_without_consent_on_a_real_detected_face_is_403_forbidden(client):
+def test_enroll_without_consent_on_a_real_detected_face_is_403_forbidden(admin_client):
     """Regression-targeted fix: the pre-existing test with a similar name
     asserted 422, but on a blank (faceless) image -- so it was actually
     exercising the 'no face detected' branch, not consent enforcement at
@@ -231,7 +232,7 @@ def test_enroll_without_consent_on_a_real_detected_face_is_403_forbidden(client)
     assert ok
 
     with patch("app.api.routes.detection.detect_faces", return_value=([_fake_detected_face()], {})):
-        resp = client.post(
+        resp = admin_client.post(
             "/api/faces/enroll",
             files={"file": ("face.jpg", buf.tobytes(), "image/jpeg")},
             data={"name": "Test Person", "consent_confirmed": "false"},
@@ -239,11 +240,11 @@ def test_enroll_without_consent_on_a_real_detected_face_is_403_forbidden(client)
     assert resp.status_code == 403
 
 
-def test_enroll_missing_consent_field_entirely_is_422(client, blank_jpg_bytes):
+def test_enroll_missing_consent_field_entirely_is_422(admin_client, blank_jpg_bytes):
     """consent_confirmed has no default (Form(...)) -- omitting it entirely
     must be a pydantic/FastAPI validation error, distinct from sending an
     explicit 'false'."""
-    resp = client.post(
+    resp = admin_client.post(
         "/api/faces/enroll",
         files={"file": ("blank.jpg", blank_jpg_bytes, "image/jpeg")},
         data={"name": "Test Person"},
@@ -251,13 +252,13 @@ def test_enroll_missing_consent_field_entirely_is_422(client, blank_jpg_bytes):
     assert resp.status_code == 422
 
 
-def test_enroll_with_empty_name_on_real_face_is_400(client):
+def test_enroll_with_empty_name_on_real_face_is_400(admin_client):
     img = np.full((300, 300, 3), 150, dtype=np.uint8)
     ok, buf = cv2.imencode(".jpg", img)
     assert ok
 
     with patch("app.api.routes.detection.detect_faces", return_value=([_fake_detected_face()], {})):
-        resp = client.post(
+        resp = admin_client.post(
             "/api/faces/enroll",
             files={"file": ("face.jpg", buf.tobytes(), "image/jpeg")},
             data={"name": "   ", "consent_confirmed": "true"},
@@ -265,8 +266,8 @@ def test_enroll_with_empty_name_on_real_face_is_400(client):
     assert resp.status_code == 400
 
 
-def test_enroll_with_zero_faces_is_422(client, blank_jpg_bytes):
-    resp = client.post(
+def test_enroll_with_zero_faces_is_422(admin_client, blank_jpg_bytes):
+    resp = admin_client.post(
         "/api/faces/enroll",
         files={"file": ("blank.jpg", blank_jpg_bytes, "image/jpeg")},
         data={"name": "Nobody", "consent_confirmed": "true"},
@@ -275,14 +276,14 @@ def test_enroll_with_zero_faces_is_422(client, blank_jpg_bytes):
     assert "no face" in resp.json()["detail"].lower()
 
 
-def test_enroll_with_two_faces_is_422(client):
+def test_enroll_with_two_faces_is_422(admin_client):
     img = np.full((300, 600, 3), 150, dtype=np.uint8)
     ok, buf = cv2.imencode(".jpg", img)
     assert ok
 
     two_faces = [_fake_detected_face(), _fake_detected_face()]
     with patch("app.api.routes.detection.detect_faces", return_value=(two_faces, {})):
-        resp = client.post(
+        resp = admin_client.post(
             "/api/faces/enroll",
             files={"file": ("two.jpg", buf.tobytes(), "image/jpeg")},
             data={"name": "Ambiguous", "consent_confirmed": "true"},
@@ -291,13 +292,13 @@ def test_enroll_with_two_faces_is_422(client):
     assert "multiple faces" in resp.json()["detail"].lower()
 
 
-def test_enroll_then_delete_round_trip_with_real_detected_face(client):
+def test_enroll_then_delete_round_trip_with_real_detected_face(admin_client):
     img = np.full((300, 300, 3), 150, dtype=np.uint8)
     ok, buf = cv2.imencode(".jpg", img)
     assert ok
 
     with patch("app.api.routes.detection.detect_faces", return_value=([_fake_detected_face()], {})):
-        enroll_resp = client.post(
+        enroll_resp = admin_client.post(
             "/api/faces/enroll",
             files={"file": ("face.jpg", buf.tobytes(), "image/jpeg")},
             data={"name": "Round Trip", "consent_confirmed": "true"},
@@ -305,28 +306,28 @@ def test_enroll_then_delete_round_trip_with_real_detected_face(client):
     assert enroll_resp.status_code == 200
     face_id = enroll_resp.json()["face_id"]
 
-    listed = client.get("/api/faces").json()
+    listed = admin_client.get("/api/faces").json()
     assert any(e["face_id"] == face_id for e in listed)
 
-    del_resp = client.delete(f"/api/faces/{face_id}")
+    del_resp = admin_client.delete(f"/api/faces/{face_id}")
     assert del_resp.status_code == 200
     assert del_resp.json()["deleted"] is True
 
-    del_again = client.delete(f"/api/faces/{face_id}")
+    del_again = admin_client.delete(f"/api/faces/{face_id}")
     assert del_again.status_code == 404  # already gone
 
 
 # --- 5. Malformed / missing request fields --------------------------------
 
-def test_analyze_image_missing_file_field_is_422(client):
-    resp = client.post("/api/analyze/image", data={"run_recognition": "true"})
+def test_analyze_image_missing_file_field_is_422(auth_client):
+    resp = auth_client.post("/api/analyze/image", data={"run_recognition": "true"})
     assert resp.status_code == 422
 
 
-def test_analyze_image_garbage_boolean_form_values_do_not_500(client, blank_jpg_bytes):
+def test_analyze_image_garbage_boolean_form_values_do_not_500(auth_client, blank_jpg_bytes):
     """FastAPI/pydantic should reject or coerce nonsense boolean strings, but
     must never surface as an unhandled 500."""
-    resp = client.post(
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("blank.jpg", blank_jpg_bytes, "image/jpeg")},
         data={"run_recognition": "banana"},
@@ -334,16 +335,16 @@ def test_analyze_image_garbage_boolean_form_values_do_not_500(client, blank_jpg_
     assert resp.status_code in (200, 422)
 
 
-def test_analyze_video_rejects_corrupt_file(client):
-    resp = client.post(
+def test_analyze_video_rejects_corrupt_file(auth_client):
+    resp = auth_client.post(
         "/api/analyze/video",
         files={"file": ("broken.mp4", b"not a real mp4 container", "video/mp4")},
     )
     assert resp.status_code == 400
 
 
-def test_analyze_video_rejects_wrong_extension(client):
-    resp = client.post(
+def test_analyze_video_rejects_wrong_extension(auth_client):
+    resp = auth_client.post(
         "/api/analyze/video",
         files={"file": ("video.txt", b"hello", "text/plain")},
     )
@@ -359,11 +360,11 @@ def test_analyze_video_rejects_wrong_extension(client):
         '{"$ne": null}',
         "<img src=x onerror=alert(1)>",
         "../../etc/passwd",
-        "名前\u0000\u200b",  # unicode + embedded null + zero-width space
+        "名前\u0000​",  # unicode + embedded null + zero-width space
         "😀" * 50,
     ],
 )
-def test_enroll_name_with_injection_style_strings_is_stored_as_inert_text(client, injection_name):
+def test_enroll_name_with_injection_style_strings_is_stored_as_inert_text(admin_client, injection_name):
     """There's no SQL or template engine in this path (the gallery is a flat
     JSON index), but the name does round-trip through json.dump/json.load
     and back out over HTTP -- this proves that pipeline is robust to hostile
@@ -374,7 +375,7 @@ def test_enroll_name_with_injection_style_strings_is_stored_as_inert_text(client
     assert ok
 
     with patch("app.api.routes.detection.detect_faces", return_value=([_fake_detected_face()], {})):
-        resp = client.post(
+        resp = admin_client.post(
             "/api/faces/enroll",
             files={"file": ("face.jpg", buf.tobytes(), "image/jpeg")},
             data={"name": injection_name, "consent_confirmed": "true"},
@@ -383,5 +384,5 @@ def test_enroll_name_with_injection_style_strings_is_stored_as_inert_text(client
     returned_name = resp.json()["name"]
     assert returned_name == injection_name.strip()
 
-    listed = client.get("/api/faces").json()
+    listed = admin_client.get("/api/faces").json()
     assert any(e["name"] == injection_name.strip() for e in listed)

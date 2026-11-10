@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-10T13:19:50.217101Z",
+  "models": {
+    "scrfd_10g_bnkps_int8.onnx": {
+      "filename": "scrfd_10g_bnkps_int8.onnx",
+      "sha256": "5cad2a01da24944e1b08129e4f46bf24e7a00f5905bc4972332bb41119a38ee3",
+      "size": 4305997,
+      "purpose": "Face detection & 5-pt alignment (SCRFD-10G INT8)",
+      "required": true
+    },
+    "w600k_r50_int8.onnx": {
+      "filename": "w600k_r50_int8.onnx",
+      "sha256": "5219952187162894d4d4578c480f279f4a88625d62a210c29101c918d146ca83",
+      "size": 43788579,
+      "purpose": "Face recognition embeddings (ArcFace-R50 INT8)",
+      "required": true
+    },
+    "enet_b0_8_best_vgaf.onnx": {
+      "filename": "enet_b0_8_best_vgaf.onnx",
+      "sha256": "fa07e841fd06c7a67ee651ea4e6e4a3a2bb5695f47b37a7da50492526f59c898",
+      "size": 16039595,
+      "purpose": "Expression classification (HSEmotion-ENetB0 INT8)",
+      "required": true
+    },
+    "fairface.onnx": {
+      "filename": "fairface.onnx",
+      "sha256": "9c8c47d437cd310538d233f2465f9ed0524cb7fb51882a37f74e8bc22437fdbf",
+      "size": 85160429,
+      "purpose": "Age & gender estimation (FairFace ensemble)",
+      "required": true
+    },
+    "mobilefacenet_arcface_int8.onnx": {
+      "filename": "mobilefacenet_arcface_int8.onnx",
+      "sha256": "7caa7fb0ad6c37b33e6c59f6411084b487aaabd596bba645d2cce391a5871120",
+      "size": 3514509,
+      "purpose": "Face recognition fallback (MobileFaceNet INT8)",
+      "required": false
+    },
+    "shape_predictor_5_face_landmarks.dat": {
+      "filename": "shape_predictor_5_face_landmarks.dat",
+      "sha256": "c4b1e9804792707d3a405c2c16a80a20269e6675021f64a41d30fffafbc41888",
+      "size": 9150489,
+      "purpose": "Dlib 5-point landmark predictor (legacy age model)",
+      "required": false
+    }
+  }
+}

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import pipeline, recognition
+from app.security.auth import create_api_key, Role
 
 
 @pytest.fixture(autouse=True)
@@ -15,8 +16,27 @@ def isolated_gallery(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def ws_token():
+    """Create a test API key with Operator role for WebSocket testing."""
+    plaintext, record = create_api_key(
+        name="test-ws-operator",
+        role=Role.OPERATOR,
+        expires_in_days=1,
+        metadata={"test": True}
+    )
+    return plaintext
+
+
+@pytest.fixture
+def ws_admin_token():
+    """Create a test API key with Admin role for WebSocket testing."""
+    plaintext, record = create_api_key(
+        name="test-ws-admin",
+        role=Role.ADMIN,
+        expires_in_days=1,
+        metadata={"test": True}
+    )
+    return plaintext
 
 
 @pytest.fixture
@@ -26,8 +46,9 @@ def blank_jpeg_bytes(blank_image) -> bytes:
     return buf.tobytes()
 
 
-def test_ws_connects_and_analyzes_one_frame(client, blank_jpeg_bytes):
-    with client.websocket_connect("/ws/analyze") as ws:
+def test_ws_connects_and_analyzes_one_frame(ws_token, blank_jpeg_bytes):
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}") as ws:
         ws.send_bytes(blank_jpeg_bytes)
         result = ws.receive_json()
         assert "face_count" in result
@@ -35,7 +56,7 @@ def test_ws_connects_and_analyzes_one_frame(client, blank_jpeg_bytes):
         assert "active_tracks" in result
 
 
-def test_ws_rejects_decompression_bomb_frame_without_closing(client, blank_jpeg_bytes):
+def test_ws_rejects_decompression_bomb_frame_without_closing(ws_token, blank_jpeg_bytes):
     """Same decompression-bomb concern as the HTTP routes (see
     test_security_blackbox.py) -- a frame small enough to pass
     _MAX_FRAME_BYTES but which decodes to an enormous array must be
@@ -49,7 +70,8 @@ def test_ws_rejects_decompression_bomb_frame_without_closing(client, blank_jpeg_
     bomb_bytes = buf.tobytes()
     assert len(bomb_bytes) < 5 * 1024 * 1024  # small on disk, huge once decoded
 
-    with client.websocket_connect("/ws/analyze") as ws:
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}") as ws:
         ws.send_bytes(bomb_bytes)
         result = ws.receive_json()
         assert "error" in result
@@ -61,8 +83,9 @@ def test_ws_rejects_decompression_bomb_frame_without_closing(client, blank_jpeg_
         assert "face_count" in result2
 
 
-def test_ws_recovers_after_a_bad_frame_without_closing(client, blank_jpeg_bytes):
-    with client.websocket_connect("/ws/analyze") as ws:
+def test_ws_recovers_after_a_bad_frame_without_closing(ws_token, blank_jpeg_bytes):
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}") as ws:
         ws.send_bytes(b"not a real jpeg at all")
         bad_result = ws.receive_json()
         assert "error" in bad_result
@@ -73,8 +96,9 @@ def test_ws_recovers_after_a_bad_frame_without_closing(client, blank_jpeg_bytes)
         assert "face_count" in good_result
 
 
-def test_ws_rejects_empty_frame_without_closing(client, blank_jpeg_bytes):
-    with client.websocket_connect("/ws/analyze") as ws:
+def test_ws_rejects_empty_frame_without_closing(ws_token, blank_jpeg_bytes):
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}") as ws:
         ws.send_bytes(b"")
         resp = ws.receive_json()
         assert "error" in resp
@@ -84,27 +108,29 @@ def test_ws_rejects_empty_frame_without_closing(client, blank_jpeg_bytes):
         assert "face_count" in good_result
 
 
-def test_ws_track_ids_persist_across_frames_in_one_connection(client, blank_jpeg_bytes):
+def test_ws_track_ids_persist_across_frames_in_one_connection(ws_token, blank_jpeg_bytes):
     # With zero faces in a blank frame there's nothing to track, but this
     # confirms the endpoint accepts a sequence of frames on one connection
     # without error -- the per-connection FaceTracker lifecycle itself.
-    with client.websocket_connect("/ws/analyze") as ws:
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}") as ws:
         for _ in range(3):
             ws.send_bytes(blank_jpeg_bytes)
             result = ws.receive_json()
             assert result["active_tracks"] == 0
 
 
-def test_ws_respects_query_param_options(client, blank_jpeg_bytes):
+def test_ws_respects_query_param_options(ws_token, blank_jpeg_bytes):
+    client = TestClient(app)
     with client.websocket_connect(
-        "/ws/analyze?run_recognition=false&run_expression=false&run_age=false"
+        f"/ws/analyze?token={ws_token}&run_recognition=false&run_expression=false&run_age=false"
     ) as ws:
         ws.send_bytes(blank_jpeg_bytes)
         result = ws.receive_json()
         assert "face_count" in result  # still responds normally with all tasks disabled
 
 
-def test_ws_age_is_disabled_by_default(client, blank_jpeg_bytes, monkeypatch):
+def test_ws_age_is_disabled_by_default(ws_token, blank_jpeg_bytes, monkeypatch):
     seen_options = []
 
     def fake_analyze(_frame, options):
@@ -112,7 +138,8 @@ def test_ws_age_is_disabled_by_default(client, blank_jpeg_bytes, monkeypatch):
         return pipeline.PipelineResult(faces=[], detector_meta={}, total_latency_ms=0)
 
     monkeypatch.setattr(pipeline, "analyze_image", fake_analyze)
-    with client.websocket_connect("/ws/analyze") as ws:
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}") as ws:
         ws.send_bytes(blank_jpeg_bytes)
         assert ws.receive_json()["face_count"] == 0
 
@@ -120,7 +147,7 @@ def test_ws_age_is_disabled_by_default(client, blank_jpeg_bytes, monkeypatch):
     assert seen_options[0].run_age is False
 
 
-def test_ws_option_change_applies_after_in_flight_frame(client, blank_jpeg_bytes, monkeypatch):
+def test_ws_option_change_applies_after_in_flight_frame(ws_token, blank_jpeg_bytes, monkeypatch):
     analysis_started = threading.Event()
     finish_analysis = threading.Event()
     seen_age_options = []
@@ -133,7 +160,8 @@ def test_ws_option_change_applies_after_in_flight_frame(client, blank_jpeg_bytes
         return pipeline.PipelineResult(faces=[], detector_meta={}, total_latency_ms=0)
 
     monkeypatch.setattr(pipeline, "analyze_image", fake_analyze)
-    with client.websocket_connect("/ws/analyze?run_age=true") as ws:
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/analyze?token={ws_token}&run_age=true") as ws:
         ws.send_bytes(blank_jpeg_bytes)
         assert analysis_started.wait(timeout=2)
 
@@ -151,3 +179,36 @@ def test_ws_option_change_applies_after_in_flight_frame(client, blank_jpeg_bytes
         assert ws.receive_json()["face_count"] == 0
 
     assert seen_age_options == [True, False]
+
+
+def test_ws_rejects_without_token():
+    """WebSocket must reject connection without authentication token."""
+    client = TestClient(app)
+    with pytest.raises(Exception):
+        with client.websocket_connect("/ws/analyze") as ws:
+            pass
+
+
+def test_ws_rejects_with_invalid_token():
+    """WebSocket must reject connection with invalid authentication token."""
+    client = TestClient(app)
+    with pytest.raises(Exception):
+        with client.websocket_connect("/ws/analyze?token=invalid_token") as ws:
+            pass
+
+
+def test_ws_rejects_with_viewer_role(ws_admin_token):
+    """Viewer role should not have ANALYZE_STREAM permission."""
+    from app.security.auth import create_api_key, Role
+
+    viewer_token, _ = create_api_key(
+        name="test-viewer",
+        role=Role.VIEWER,
+        expires_in_days=1,
+        metadata={"test": True}
+    )
+
+    client = TestClient(app)
+    with pytest.raises(Exception):
+        with client.websocket_connect(f"/ws/analyze?token={viewer_token}") as ws:
+            pass

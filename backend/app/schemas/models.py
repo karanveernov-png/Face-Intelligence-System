@@ -21,6 +21,12 @@ class DeleteResponse(BaseModel):
     deleted: bool
 
 
+class WithdrawConsentResponse(BaseModel):
+    face_id: str
+    withdrawn: bool
+    message: str
+
+
 class ModelStatus(BaseModel):
     name: str
     purpose: str

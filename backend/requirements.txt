@@ -16,11 +16,19 @@ hsemotion-onnx>=0.3.1
 # separately with `pip install uniface` if you run that script, it is not a
 # runtime dependency of the backend itself.)
 
+# Security / Cryptography
+cryptography>=42.0
+
 # API
 fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.6
+pydantic-settings>=2.0
 python-multipart>=0.0.9
+
+# Rate limiting
+slowapi>=0.1.9
+redis>=5.0
 
 # Testing
 pytest>=8.0

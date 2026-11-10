@@ -1,6 +1,5 @@
 import cv2
 import pytest
-from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services import recognition
@@ -10,11 +9,6 @@ from app.services import recognition
 def isolated_gallery(tmp_path, monkeypatch):
     monkeypatch.setattr(recognition, "_INDEX_PATH", tmp_path / "index.json")
     yield
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
 
 
 @pytest.fixture
@@ -36,7 +30,7 @@ def test_models_status_reports_real_state(client):
     body = resp.json()
     names = {m["name"] for m in body}
     assert {
-        "SCRFD-10G-INT8/Haar",
+        "SCRFD-10G-INT8",
         "ArcFace-R50-INT8",
         "HSEmotion-ENetB0-INT8",
         "GenderAge+FairFace-Ensemble",
@@ -45,24 +39,24 @@ def test_models_status_reports_real_state(client):
         assert "loaded" in m
 
 
-def test_analyze_image_rejects_wrong_extension(client):
-    resp = client.post(
+def test_analyze_image_rejects_wrong_extension(auth_client):
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("not_an_image.txt", b"hello world", "text/plain")},
     )
     assert resp.status_code == 400
 
 
-def test_analyze_image_rejects_corrupt_file(client):
-    resp = client.post(
+def test_analyze_image_rejects_corrupt_file(auth_client):
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("broken.jpg", b"\x00\x01not a real jpeg", "image/jpeg")},
     )
     assert resp.status_code == 400
 
 
-def test_analyze_image_on_blank_image_returns_zero_faces(client, blank_jpg_bytes):
-    resp = client.post(
+def test_analyze_image_on_blank_image_returns_zero_faces(auth_client, blank_jpg_bytes):
+    resp = auth_client.post(
         "/api/analyze/image",
         files={"file": ("blank.jpg", blank_jpg_bytes, "image/jpeg")},
     )
@@ -73,7 +67,7 @@ def test_analyze_image_on_blank_image_returns_zero_faces(client, blank_jpg_bytes
     assert "total_latency_ms" in body
 
 
-def test_enroll_consent_false_on_faceless_image_is_422_for_the_face_check_not_consent(client, blank_jpg_bytes):
+def test_enroll_consent_false_on_faceless_image_is_422_for_the_face_check_not_consent(admin_client, blank_jpg_bytes):
     """BUG FOUND IN TESTING (fixed by clarifying, not changing behavior): this
     test used to be named test_enroll_requires_consent_field and asserted
     422, which happens to be correct -- but for the wrong reason. blank_jpg
@@ -85,7 +79,7 @@ def test_enroll_consent_false_on_faceless_image_is_422_for_the_face_check_not_co
     detection result so a face really is present when consent is checked.
     This test is kept, renamed, to document that the 422-on-faceless-image
     behavior is itself still correct and intentional."""
-    resp = client.post(
+    resp = admin_client.post(
         "/api/faces/enroll",
         data={"name": "Test Person", "consent_confirmed": "false"},
         files={"file": ("blank.jpg", blank_jpg_bytes, "image/jpeg")},
@@ -94,12 +88,12 @@ def test_enroll_consent_false_on_faceless_image_is_422_for_the_face_check_not_co
     assert "no face" in resp.json()["detail"].lower()
 
 
-def test_faces_list_starts_empty(client):
-    resp = client.get("/api/faces")
+def test_faces_list_starts_empty(admin_client):
+    resp = admin_client.get("/api/faces")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
-def test_delete_nonexistent_face_returns_404(client):
-    resp = client.delete("/api/faces/does-not-exist")
+def test_delete_nonexistent_face_returns_404(admin_client):
+    resp = admin_client.delete("/api/faces/does-not-exist")
     assert resp.status_code == 404

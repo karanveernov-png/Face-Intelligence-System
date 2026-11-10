@@ -40,29 +40,66 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r backend/requirements.txt
 
-# 3. Run API server
+# 3. (Optional) Enable encryption at rest for biometric embeddings
+#    Generate keys once:
+#    python -c "import base64, secrets; print('FACE_ENCRYPTION_KEY=' + base64.b64encode(secrets.token_bytes(32)).decode()); print('FACE_ENCRYPTION_SALT=' + base64.b64encode(secrets.token_bytes(32)).decode())"
+#    Export them before running:
+export FACE_ENCRYPTION_KEY="your-generated-key"
+export FACE_ENCRYPTION_SALT="your-generated-salt"
+
+# 4. Run API server
 cd backend
 uvicorn app.main:app --reload
 
-# 4. Open API docs
+# 5. Open API docs
 # http://127.0.0.1:8000/docs
 ```
 
-### Test the API
+### Test the API (Authenticated)
 
 ```bash
-# Health check
+# Create an API key first (one-time):
+cd backend
+python -c "
+from app.security.auth import create_api_key, Role
+key, _ = create_api_key(name='my-operator', role=Role.OPERATOR)
+print('API Key:', key)
+"
+
+# Health check (public)
 curl http://127.0.0.1:8000/health
 
-# Model status
+# Model status (public)
 curl http://127.0.0.1:8000/api/models/status
 
-# Analyze an image (with age estimation)
+# Analyze an image (requires ANALYZE_IMAGE permission - Operator, Admin, Service)
 curl -X POST "http://127.0.0.1:8000/api/analyze/image?run_age=true" \
+  -H "X-API-Key: fi_..." \
   -F "file=@your-photo.jpg"
 
-# Start webcam stream (WebSocket)
-# Open http://127.0.0.1:8000/docs and use /ws/analyze
+# Analyze video (requires ANALYZE_VIDEO permission)
+curl -X POST "http://127.0.0.1:8000/api/analyze/video" \
+  -H "X-API-Key: fi_..." \
+  -F "file=@your-video.mp4"
+
+# WebSocket live stream (requires ANALYZE_STREAM permission + token query param)
+# Connect to: ws://127.0.0.1:8000/ws/analyze?token=fi_...
+
+# Enroll a face (requires ENROLL_FACE permission - Admin, Service + consent)
+curl -X POST "http://127.0.0.1:8000/api/faces/enroll" \
+  -H "X-API-Key: fi_admin_key" \
+  -F "file=@face.jpg" \
+  -F "name=John Doe" \
+  -F "consent_confirmed=true"
+
+# List enrolled faces (requires LIST_FACES permission - Admin, Viewer, Service)
+curl -H "X-API-Key: fi_admin_key" http://127.0.0.1:8000/api/faces
+
+# Delete enrolled face (requires DELETE_FACE permission - Admin, Service)
+curl -X DELETE -H "X-API-Key: fi_admin_key" http://127.0.0.1:8000/api/faces/<face_id>
+
+# Withdraw consent (requires ENROLL_FACE permission - Admin, Service)
+curl -X POST -H "X-API-Key: fi_admin_key" http://127.0.0.1:8000/api/faces/<face_id>/withdraw-consent
 ```
 
 ---
@@ -73,8 +110,21 @@ curl -X POST "http://127.0.0.1:8000/api/analyze/image?run_age=true" \
 cd backend
 PYTHONPATH=. python -m pytest tests/ -q
 
-# Expected: 150 passed, 1 pre-existing failure (OpenCV 5.0 missing CascadeClassifier), 6 skipped
+# Expected: 154 passed, 6 skipped (real-face eval tests require manual consented dataset)
 ```
+
+### Security Test Coverage
+
+The test suite includes 40+ black-box security tests (`test_security_blackbox.py`, `test_ws.py`):
+
+- Authentication bypass → 401/403
+- Authorization enforcement per endpoint → 403
+- WebSocket auth rejection (missing/invalid token, wrong role) → close 1008
+- Decompression bomb protection (HTTP + WS) → 413
+- Path traversal in filenames → handled safely
+- SQL/XSS injection in free-text fields → stored as inert text
+- Frame rate limits on WebSocket → 30 fps / 60 fpm
+- Connection limits → 100 total / 10 per IP
 
 ---
 
@@ -226,10 +276,75 @@ recognition_distance_threshold: 0.68  # Cosine distance for match
 - **Local-first**: No data leaves your machine/server
 - **Consent required**: `/api/faces/enroll` mandates `consent_confirmed=true`
 - **Right to deletion**: `DELETE /api/faces/{face_id}` removes gallery image + embedding
+- **Consent withdrawal**: `POST /api/faces/{face_id}/withdraw-consent` permanently deletes biometric data
+- **Encryption at rest (optional)**: Face embeddings encrypted with AES-256-GCM when `FACE_ENCRYPTION_KEY` + `FACE_ENCRYPTION_SALT` env vars are set. PBKDF2 (100k iterations) key derivation. Automatic backup + migration of existing plaintext embeddings on first enrollment after enabling.
 - **No tracking**: No analytics, no telemetry, no external calls
 - **Age estimation disclaimer**: Visual age estimation is inherently approximate; **must not** be used for age-gating, legal decisions, or minor detection
 
 See `docs/PRIVACY.md` for full model.
+
+---
+
+## Security (Phase 1 Hardening)
+
+This repository includes **Phase 1 Critical Security Hardening** — a baseline of controls suitable for a controlled/private deployment. Not production-ready for public biometric services.
+
+### Authentication & Authorization
+- **API key authentication** (X-API-Key header, Bearer token, or query param) with PBKDF2-HMAC-SHA256 hashing (100k iterations)
+- **Role-Based Access Control (RBAC)** with 4 roles:
+  - `ADMIN`: Full access (enroll, list, delete, analyze, admin)
+  - `OPERATOR`: Analyze (image/video/stream), recognize, model status
+  - `VIEWER`: List faces, model status only
+  - `SERVICE`: Full API access (service-to-service)
+- **Granular permissions** per endpoint via `require_permission()` dependencies
+
+### WebSocket Security (`/ws/analyze`)
+- Token required during handshake (`?token=fi_...`)
+- Validates revocation, expiration, `ANALYZE_STREAM` permission
+- Rate limits: 30 frames/sec + 60 frames/min per connection
+- Connection limits: 100 concurrent, 10 per IP
+- Idle timeout: 5 minutes
+- Admin stats endpoint: `GET /ws/stats` (ADMIN_CONFIG permission)
+
+### Encryption at Rest
+- **AES-256-GCM** authenticated encryption for face embeddings
+- **External key management**: Master key + salt from environment variables (`FACE_ENCRYPTION_KEY`, `FACE_ENCRYPTION_SALT`)
+- **PBKDF2** key derivation (100k iterations, unique salt per key ID)
+- **Key rotation support** via `KeyManager.rotate_key()`
+- **Automatic migration**: On first enrollment with encryption enabled, creates timestamped backup of plaintext index and migrates all embeddings
+- **Fails closed**: If encryption is configured but not initialized, gallery loading fails explicitly (no silent plaintext fallback)
+
+### Rate Limiting
+- HTTP: `slowapi` with IP + API key identification, 60 req/min default (configurable via `RATE_LIMIT_RPM`)
+- WebSocket: Per-second + per-minute frame limits (separate from HTTP limiter)
+- Redis support for distributed rate limiting (`REDIS_URL`)
+
+### Production Configuration Validation
+- `validate_production_config()` checks on startup:
+  - `DEBUG=false`
+  - `API_KEY_SALT` changed from default
+  - `FACE_ENCRYPTION_KEY` + `FACE_ENCRYPTION_SALT` set
+  - No `localhost` in `CORS_ORIGINS`
+  - `RATE_LIMIT_ENABLED=true`
+  - `REDIS_URL` set (production)
+- Fails fast in production if validation fails
+
+### Security Headers (All Responses)
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+Strict-Transport-Security: max-age=31536000; includeSubDomains (production only)
+```
+
+### Known Limitations (Not Yet Implemented)
+- Distributed rate limiting (Redis optional but not required)
+- Automated key rotation / external KMS integration
+- Audit logging for admin actions
+- Certificate pinning / mTLS
+- SIEM integration
 
 ---
 

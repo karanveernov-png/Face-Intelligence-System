@@ -2,15 +2,13 @@
 Face detection & 5-point landmark extraction (Accuracy-First INT8 Production Stack).
 
 Backends wired up in priority order:
-  1. SCRFD-10G INT8 / SCRFD-2.5G INT8 (InsightFace) —
-     * SCRFD-10G INT8 (`scrfd_10g_bnkps_int8.onnx` / `det_10g.onnx`): ~4.3 MB INT8
-       (16.9 MB FP32), achieving **95.16% on WiderFace Hard** (higher accuracy than
-       heavyweight RetinaFace-ResNet50 at 1/25th the size).
-     * SCRFD-2.5G (`scrfd_2.5g_bnkps.onnx` / `det_2.5g.onnx`): ~0.9 MB INT8
-       (3.2 MB FP32), achieving **93.8% on WiderFace Hard**.
-     Both share the exact same multi-stride (8, 16, 32) anchor-free architecture and
-     output bounding boxes + 5 facial landmarks in one forward pass.
-  2. Haar Cascade (fallback) — bundled inside opencv-python itself.
+  1. SCRFD-10G INT8 (`scrfd_10g_bnkps_int8.onnx`): ~4.3 MB INT8,
+     achieving **95.16% on WiderFace Hard** (higher accuracy than RetinaFace-R50).
+  2. SCRFD-2.5G INT8 (`scrfd_2.5g_bnkps_int8.onnx`): ~0.9 MB INT8,
+     achieving **93.8% on WiderFace Hard**.
+  3. InsightFace `buffalo_l` / `buffalo_s` detection module (if ONNX weights unavailable).
+  4. No Haar/YuNet fallback in OpenCV 5.0+ — CascadeClassifier removed, YuNet requires
+     external model file not bundled. SCRFD models are always preferred.
 """
 from __future__ import annotations
 
@@ -26,9 +24,6 @@ from app.core.config import settings
 from app.core.onnx_runtime import get_active_execution_providers, load_onnx_session
 
 logger = logging.getLogger("face_intelligence.detection")
-
-_HAAR_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-_haar_detector: cv2.CascadeClassifier | None = None
 
 _scrfd_session = None
 _scrfd_model_name: str = "scrfd-10g-int8"
@@ -70,38 +65,6 @@ class DetectedFace:
         }
 
 
-def _get_haar() -> cv2.CascadeClassifier:
-    global _haar_detector
-    if _haar_detector is None:
-        _haar_detector = cv2.CascadeClassifier(_HAAR_PATH)
-        if _haar_detector.empty():
-            raise RuntimeError(
-                "Haar cascade failed to load from the bundled opencv-python data path."
-            )
-    return _haar_detector
-
-
-def _detect_haar(image_bgr: np.ndarray) -> list[DetectedFace]:
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)
-    boxes = _get_haar().detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
-    )
-    faces: list[DetectedFace] = []
-    for (x, y, w, h) in boxes:
-        x_i, y_i, w_i, h_i = int(x), int(y), int(w), int(h)
-        faces.append(
-            DetectedFace(
-                x=x_i,
-                y=y_i,
-                w=w_i,
-                h=h_i,
-                confidence=1.0,
-                backend="opencv-haar",
-                crop_bgr=image_bgr[max(y_i, 0) : y_i + h_i, max(x_i, 0) : x_i + w_i].copy(),
-            )
-        )
-    return faces
 
 
 def _distance2bbox(points: np.ndarray, distance: np.ndarray) -> np.ndarray:
@@ -340,6 +303,9 @@ def detect_faces(image_bgr: np.ndarray) -> tuple[list[DetectedFace], dict[str, A
     """
     Run face detection on a single BGR image.
     Returns (faces, meta) where meta carries honest diagnostics.
+
+    No fallback detector in OpenCV 5.0+ — SCRFD models are required.
+    If SCRFD fails, the error is propagated to caller.
     """
     t0 = time.time()
     meta: dict[str, Any] = {"fallback_used": False, "errors": []}
@@ -357,11 +323,9 @@ def detect_faces(image_bgr: np.ndarray) -> tuple[list[DetectedFace], dict[str, A
         except Exception as exc:  # noqa: BLE001
             _scrfd_ready = False
             _retinaface_ready = False
-            logger.warning("SCRFD backend unavailable (%s); falling back to Haar Cascade.", exc)
+            logger.error("SCRFD backend unavailable: %s", exc)
             meta["errors"].append(f"scrfd_unavailable: {exc}")
-            meta["fallback_used"] = True
+            raise
 
-    faces = _detect_haar(image_bgr)
-    meta["backend_used"] = "opencv-haar"
-    meta["latency_ms"] = round((time.time() - t0) * 1000, 1)
-    return faces, meta
+    # Should not reach here — SCRFD is the only backend
+    raise RuntimeError("No face detection backend available. SCRFD models required.")

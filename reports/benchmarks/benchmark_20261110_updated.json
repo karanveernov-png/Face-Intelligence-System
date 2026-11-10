@@ -1,0 +1,135 @@
+{
+  "environment": {
+    "timestamp": "2026-11-10T13:30:10Z",
+    "hostname": "Karanveer14",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python_version": "3.14.7",
+    "cpu_count": 4,
+    "cpu_model": "Intel64 Family 6 Model 140 Stepping 2, GenuineIntel",
+    "opencv_version": "5.0.0",
+    "onnxruntime_version": "1.31.1",
+    "numpy_version": "2.5.0",
+    "execution_providers": [
+      "CPUExecutionProvider"
+    ],
+    "model_files": {
+      "age_resnet10_v1_int8.onnx": "2de305c6f124d611",
+      "enet_b0_8_best_vgaf.onnx": "fa07e841fd06c7a6",
+      "enet_b0_8_best_vgaf_int8.onnx": "3e97eb9850490fa8",
+      "fairface.onnx": "9c8c47d437cd3105",
+      "fairface_int8.onnx": "505a3af9f7b1cc47",
+      "genderage.onnx": "4fde69b1c810857b",
+      "genderage_int8.onnx": "3597e1dff7dd5902",
+      "gender_resnet10_v1_int8.onnx": "262ac6be76e590c4",
+      "hsemotion_enet_b0_8_int8.onnx": "f485829b56aad18a",
+      "mobilefacenet_arcface_int8.onnx": "7caa7fb0ad6c37b3",
+      "scrfd_10g_bnkps_int8.onnx": "5cad2a01da24944e",
+      "w600k_r50_int8.onnx": "5219952187162894"
+    },
+    "settings_snapshot": {
+      "detection_interval": 3,
+      "temporal_ema_alpha": 0.4,
+      "batch_inference_enabled": true,
+      "onnx_intra_op_threads": 4,
+      "recognition_distance_threshold": 0.68,
+      "detection_confidence_threshold": 0.5
+    }
+  },
+  "benchmarks": {
+    "cold_start_ms": {
+      "count": 3,
+      "mean_ms": 462.9153999655197,
+      "median_ms": 466.3556000450626,
+      "stdev_ms": 12.493435144490075,
+      "min_ms": 449.06229991465807,
+      "max_ms": 473.32829993683845,
+      "p50_ms": 466.3556000450626,
+      "p95_ms": 473.32829993683845,
+      "p99_ms": 473.32829993683845
+    },
+    "detection_single_face_ms": {
+      "count": 50,
+      "mean_ms": 243.63307599676773,
+      "median_ms": 218.12079998198897,
+      "stdev_ms": 74.03645817245992,
+      "min_ms": 190.4371000127867,
+      "max_ms": 644.4090000586584,
+      "p50_ms": 219.05760001391172,
+      "p95_ms": 374.60199999623,
+      "p99_ms": 644.4090000586584
+    },
+    "recognition_single_face_ms": {
+      "count": 50,
+      "mean_ms": 384.7829020046629,
+      "median_ms": 458.0532999825664,
+      "stdev_ms": 166.13952275559402,
+      "min_ms": 200.25429991073906,
+      "max_ms": 728.477600030601,
+      "p50_ms": 464.2911999253556,
+      "p95_ms": 656.2712999293581,
+      "p99_ms": 728.477600030601
+    },
+    "expressions_single_face_ms": {
+      "count": 1,
+      "mean_ms": 0.0,
+      "median_ms": 0.0,
+      "stdev_ms": 0,
+      "min_ms": 0.0,
+      "max_ms": 0.0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0
+    },
+    "age_estimation_single_face_ms": {
+      "count": 1,
+      "mean_ms": 0.0,
+      "median_ms": 0.0,
+      "stdev_ms": 0,
+      "min_ms": 0.0,
+      "max_ms": 0.0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0
+    },
+    "full_pipeline_single_face_ms": {
+      "count": 30,
+      "mean_ms": 300.9244866591568,
+      "median_ms": 258.8870999752544,
+      "stdev_ms": 112.18587611263534,
+      "min_ms": 203.80490005481988,
+      "max_ms": 668.1354000465944,
+      "p50_ms": 263.50130001083016,
+      "p95_ms": 610.9775999793783,
+      "p99_ms": 668.1354000465944
+    },
+    "tracking_inter_frame_ms": {
+      "count": 100,
+      "mean_ms": 253.66759500233456,
+      "median_ms": 238.84529998758808,
+      "stdev_ms": 60.714861718189866,
+      "min_ms": 184.0107999742031,
+      "max_ms": 604.869700036943,
+      "p50_ms": 239.96789997909218,
+      "p95_ms": 334.19470000080764,
+      "p99_ms": 604.869700036943
+    },
+    "concurrent_20req_4workers_ms": {
+      "count": 20,
+      "mean_ms": 736.0176999820396,
+      "median_ms": 723.0155499419197,
+      "stdev_ms": 202.9811359823825,
+      "min_ms": 294.099299935624,
+      "max_ms": 1376.7187999328598,
+      "p50_ms": 728.5309999715537,
+      "p95_ms": 1376.7187999328598,
+      "p99_ms": 1376.7187999328598
+    },
+    "batch_scaling_ms_per_face_count": {
+      "1": 207.0738500333391,
+      "2": 214.390050037764,
+      "3": 273.2065999880433,
+      "4": 224.27835006965324,
+      "5": 197.5455000065267
+    }
+  }
+}

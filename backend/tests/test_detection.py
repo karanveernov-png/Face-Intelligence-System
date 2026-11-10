@@ -36,7 +36,13 @@ def test_detected_face_serializes_to_dict(blank_image):
     assert d["landmarks"] is None  # no eyes were set
 
 
-def test_haar_fallback_loads_bundled_cascade():
-    # This must work with zero network access, since it's bundled in opencv-python.
-    cascade = detection._get_haar()
-    assert not cascade.empty()
+def test_no_fallback_detector_in_opencv5():
+    """OpenCV 5.0+ removed Haar Cascade; YuNet requires external model.
+    SCRFD is the only supported backend — no fallback detector function exists."""
+    # Verify the old Haar function is gone
+    assert not hasattr(detection, '_get_haar')
+    assert not hasattr(detection, '_get_yunet')
+    # SCRFD detection should still work (or raise clear error if models missing)
+    faces, meta = detection.detect_faces(np.zeros((480, 640, 3), dtype=np.uint8))
+    assert isinstance(faces, list)
+    assert "backend_used" in meta

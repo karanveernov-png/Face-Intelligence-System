@@ -79,6 +79,7 @@ _fallback_projection: np.ndarray | None = None
 
 
 def _load_index() -> dict[str, Any]:
+    """Load the gallery index from disk."""
     if not _INDEX_PATH.exists():
         return {}
     with open(_INDEX_PATH, "r", encoding="utf-8") as f:
@@ -86,8 +87,74 @@ def _load_index() -> dict[str, Any]:
 
 
 def _save_index(index: dict[str, Any]) -> None:
+    """Save the gallery index to disk."""
     with open(_INDEX_PATH, "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
+
+
+def _get_encryption_enabled() -> bool:
+    """Check if encryption is enabled and initialized."""
+    try:
+        from app.security.crypto import get_key_manager
+        km = get_key_manager()
+        # Check if key manager is initialized by trying to get current key ID
+        km.get_current_key_id()
+        return True
+    except (RuntimeError, AttributeError):
+        return False
+
+
+def _encrypt_and_store_embedding(embedding: np.ndarray) -> tuple[dict | None, dict[str, Any]]:
+    """
+    Encrypt an embedding and return both plaintext (for model inference) and encrypted (for storage).
+
+    Returns:
+        Tuple of (plaintext_array, encrypted_dict_or_None)
+    """
+    # Always keep plaintext version for immediate model use
+    plaintext = embedding
+
+    # Store encrypted version if encryption is enabled
+    encrypted = None
+    if _get_encryption_enabled():
+        try:
+            from app.security.crypto import encrypt_embedding
+            encrypted_data = encrypt_embedding(embedding.tolist())
+            encrypted = encrypted_data.to_dict()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to encrypt embedding: %s - will store plaintext", exc)
+
+    return plaintext, encrypted
+
+
+def _get_stored_embedding(record: dict[str, Any]) -> np.ndarray | None:
+    """
+    Extract embedding from a gallery record, decrypting if necessary.
+
+    Returns None if embedding cannot be loaded or decrypted.
+    """
+    # Check for encrypted format first
+    if "embedding_encrypted" in record and record.get("embedding") is None:
+        if not _get_encryption_enabled():
+            logger.error(
+                "Embedded data is encrypted but encryption is not initialized. "
+                "Cannot load gallery."
+            )
+            return None
+        try:
+            from app.security.crypto import decrypt_embedding, EncryptedData
+            encrypted_data = EncryptedData.from_dict(record["embedding_encrypted"])
+            decrypted_list = decrypt_embedding(encrypted_data)
+            return np.array(decrypted_list, dtype=np.float64)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to decrypt embedded: %s", exc)
+            return None
+
+    # Plaintext format (legacy or unencrypted storage)
+    if "embedding" in record and record["embedding"] is not None:
+        return np.array(record["embedding"], dtype=np.float64)
+
+    return None
 
 
 def _get_recognition_session():
@@ -314,6 +381,8 @@ def match_faces_batch(faces_bgr: Sequence[np.ndarray]) -> list[MatchResult]:
     Batch-match multiple cropped faces against the enrolled gallery in a single
     `cv2.dnn.blobFromImages` + ONNX forward pass followed by vectorized cosine
     similarity matrix multiplication.
+
+    Handles both encrypted and plaintext embeddings transparently.
     """
     if not faces_bgr:
         return []
@@ -346,23 +415,68 @@ def match_faces_batch(faces_bgr: Sequence[np.ndarray]) -> list[MatchResult]:
 
     gallery_ids = list(index.keys())
     gallery_names = [index[fid]["name"] for fid in gallery_ids]
-    gallery_vecs = np.array([index[fid]["embedding"] for fid in gallery_ids], dtype=np.float64)
 
-    distances = 1.0 - (queries @ gallery_vecs.T)
+    # Load gallery embeddings (handle encryption transparently)
+    gallery_vecs = []
+    for fid in gallery_ids:
+        emb = _get_stored_embedding(index[fid])
+        if emb is not None:
+            gallery_vecs.append(emb)
+
+    if not gallery_vecs:
+        logger.warning("No valid gallery embeddings available for matching")
+        return [
+            MatchResult(
+                identity=None,
+                distance=None,
+                threshold=settings.recognition_distance_threshold,
+                face_id=None,
+            )
+            for _ in faces_bgr
+        ]
+
+    gallery_vecs_array = np.array(gallery_vecs, dtype=np.float64)
+
+    try:
+        distances = 1.0 - (queries @ gallery_vecs_array.T)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Cosine similarity calculation failed: %s", exc)
+        return [
+            MatchResult(
+                identity=None,
+                distance=None,
+                threshold=settings.recognition_distance_threshold,
+                face_id=None,
+            )
+            for _ in faces_bgr
+        ]
 
     results: list[MatchResult] = []
     for row_idx in range(len(faces_bgr)):
         best_col = int(np.argmin(distances[row_idx]))
         best_dist = float(distances[row_idx, best_col])
-        if best_dist <= settings.recognition_distance_threshold:
-            results.append(
-                MatchResult(
-                    identity=gallery_names[best_col],
-                    distance=best_dist,
-                    threshold=settings.recognition_distance_threshold,
-                    face_id=gallery_ids[best_col],
+        # Find corresponding gallery ID
+        valid_fids = [fid for fid in gallery_ids if _get_stored_embedding(index[fid]) is not None]
+        if best_col < len(valid_fids):
+            matched_id = valid_fids[best_col]
+            if best_dist <= settings.recognition_distance_threshold:
+                results.append(
+                    MatchResult(
+                        identity=gallery_names[gallery_ids.index(matched_id)],
+                        distance=best_dist,
+                        threshold=settings.recognition_distance_threshold,
+                        face_id=matched_id,
+                    )
                 )
-            )
+            else:
+                results.append(
+                    MatchResult(
+                        identity=None,
+                        distance=best_dist,
+                        threshold=settings.recognition_distance_threshold,
+                        face_id=None,
+                    )
+                )
         else:
             results.append(
                 MatchResult(
@@ -380,6 +494,12 @@ def match_face(face_bgr: np.ndarray) -> MatchResult:
 
 
 def enroll_face(face_bgr: np.ndarray, name: str, consent_confirmed: bool) -> dict[str, Any]:
+    """
+    Enroll a face into the gallery with optional encryption.
+
+    If encryption is enabled and initialized, the embedding is encrypted
+    before storage. A backup of the plaintext index is created before migration.
+    """
     if not consent_confirmed:
         raise PermissionError("Enrollment requires explicit consent confirmation (consent_confirmed=True).")
     if not name or not name.strip():
@@ -388,13 +508,41 @@ def enroll_face(face_bgr: np.ndarray, name: str, consent_confirmed: bool) -> dic
     embedding = _embed(face_bgr)
     face_id = str(uuid.uuid4())
 
+    # Check if we need to migrate existing plaintext data
     index = _load_index()
+    needs_migration = False
+    if _get_encryption_enabled() and index:
+        # Check if any existing entries are in plaintext
+        for record in index.values():
+            if "embedding" in record and "embedding_encrypted" not in record:
+                needs_migration = True
+                break
+
+    if needs_migration:
+        logger.info("Detected plaintext embeddings; creating backup before encryption")
+        _backup_and_migrate_embeddings(index)
+        # Reload after potential migration
+        index = _load_index()
+
+    # Encrypt and store the new embedding
+    _, encrypted_data = _encrypt_and_store_embedding(embedding)
+
     index[face_id] = {
         "name": name.strip(),
-        "embedding": embedding.tolist(),
         "model": settings.recognition_model,
         "enrolled_at": time.time(),
+        "consent_status": "active",
+        "consent_timestamp": time.time(),
+        "consent_version": settings.consent_version,
     }
+
+    if encrypted_data:
+        index[face_id]["embedding_encrypted"] = encrypted_data
+        index[face_id]["embedding"] = None  # Mark as encrypted
+    else:
+        # Fallback to plaintext if encryption unavailable
+        index[face_id]["embedding"] = embedding.tolist()
+
     _save_index(index)
 
     if settings.retain_enrollment_images:
@@ -405,6 +553,99 @@ def enroll_face(face_bgr: np.ndarray, name: str, consent_confirmed: bool) -> dic
         "name": name.strip(),
         "retained_image": settings.retain_enrollment_images,
     }
+
+
+def _backup_and_migrate_embeddings(plaintext_index: dict[str, Any]) -> int:
+    """
+    Create a backup and encrypt all plaintext embeddings.
+
+    Returns:
+        Number of embeddings migrated.
+    """
+    import shutil
+    from datetime import datetime
+
+    # Create timestamped backup
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    backup_path = _INDEX_PATH.with_suffix(f".{timestamp}_plaintext_backup.json")
+    try:
+        shutil.copy2(_INDEX_PATH, backup_path)
+        logger.info("Created plaintext backup at %s", backup_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to create backup: %s", exc)
+
+    # Migrate each plaintext embedding
+    encrypted_index = {}
+    migration_count = 0
+
+    for face_id, record in plaintext_index.items():
+        if "embedding" not in record or record["embedding"] is None:
+            # Already encrypted or no embedding
+            encrypted_index[face_id] = record
+            continue
+
+        embedding_array = np.array(record["embedding"], dtype=np.float64)
+
+        # Encrypt the embedding
+        _, encrypted_data = _encrypt_and_store_embedding(embedding_array)
+
+        # Store encrypted version
+        if encrypted_data:
+            encrypted_index[face_id] = record.copy()
+            encrypted_index[face_id]["embedding_encrypted"] = encrypted_data
+            encrypted_index[face_id]["embedding"] = None
+            migration_count += 1
+        else:
+            # Keep plaintext if encryption failed
+            encrypted_index[face_id] = record
+
+    # Save encrypted index
+    _save_index(encrypted_index)
+    logger.info("Migrated %d embeddings to encrypted storage", migration_count)
+    return migration_count
+
+
+def withdraw_consent(face_id: str) -> bool:
+    """
+    Withdraw consent for a previously enrolled face.
+    The embedding is deleted and the record is purged from the gallery.
+    Returns True if the face was found and deleted, False otherwise.
+    """
+    index = _load_index()
+    if face_id not in index:
+        return False
+
+    # Record withdrawal before deleting
+    record = index[face_id]
+    record["consent_status"] = "withdrawn"
+    record["consent_withdrawn_at"] = time.time()
+
+    # Delete the embedding (irreversible)
+    del index[face_id]
+    _save_index(index)
+
+    # Remove retained enrollment image if present
+    image_path = GALLERY_DIR / f"{face_id}.jpg"
+    if image_path.exists():
+        image_path.unlink()
+
+    logger.info(
+        "Consent withdrawn for face_id=%s name=%s",
+        face_id,
+        record.get("name", "unknown"),
+    )
+    return True
+
+
+def check_consent(face_id: str) -> bool:
+    """
+    Check if a face_id still has active consent.
+    Returns True if consent is active, False if withdrawn or not found.
+    """
+    index = _load_index()
+    if face_id not in index:
+        return False
+    return index[face_id].get("consent_status", "active") == "active"
 
 
 def list_enrolled() -> list[dict[str, Any]]:

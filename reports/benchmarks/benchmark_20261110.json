@@ -1,0 +1,135 @@
+{
+  "environment": {
+    "timestamp": "2026-11-10T10:50:02Z",
+    "hostname": "Karanveer14",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python_version": "3.14.7",
+    "cpu_count": 4,
+    "cpu_model": "Intel64 Family 6 Model 140 Stepping 2, GenuineIntel",
+    "opencv_version": "5.0.0",
+    "onnxruntime_version": "1.31.1",
+    "numpy_version": "2.5.0",
+    "execution_providers": [
+      "CPUExecutionProvider"
+    ],
+    "model_files": {
+      "age_resnet10_v1_int8.onnx": "2de305c6f124d611",
+      "enet_b0_8_best_vgaf.onnx": "fa07e841fd06c7a6",
+      "enet_b0_8_best_vgaf_int8.onnx": "3e97eb9850490fa8",
+      "fairface.onnx": "9c8c47d437cd3105",
+      "fairface_int8.onnx": "505a3af9f7b1cc47",
+      "genderage.onnx": "4fde69b1c810857b",
+      "genderage_int8.onnx": "3597e1dff7dd5902",
+      "gender_resnet10_v1_int8.onnx": "262ac6be76e590c4",
+      "hsemotion_enet_b0_8_int8.onnx": "f485829b56aad18a",
+      "mobilefacenet_arcface_int8.onnx": "7caa7fb0ad6c37b3",
+      "scrfd_10g_bnkps_int8.onnx": "5cad2a01da24944e",
+      "w600k_r50_int8.onnx": "5219952187162894"
+    },
+    "settings_snapshot": {
+      "detection_interval": 3,
+      "temporal_ema_alpha": 0.4,
+      "batch_inference_enabled": true,
+      "onnx_intra_op_threads": 4,
+      "recognition_distance_threshold": 0.68,
+      "detection_confidence_threshold": 0.5
+    }
+  },
+  "benchmarks": {
+    "cold_start_ms": {
+      "count": 3,
+      "mean_ms": 506.5772666906317,
+      "median_ms": 501.3016000157222,
+      "stdev_ms": 30.403451748386654,
+      "min_ms": 479.1569000808522,
+      "max_ms": 539.2732999753207,
+      "p50_ms": 501.3016000157222,
+      "p95_ms": 539.2732999753207,
+      "p99_ms": 539.2732999753207
+    },
+    "detection_single_face_ms": {
+      "count": 50,
+      "mean_ms": 235.6618299963884,
+      "median_ms": 228.9563500089571,
+      "stdev_ms": 34.37423030866344,
+      "min_ms": 191.25529995653778,
+      "max_ms": 366.59019999206066,
+      "p50_ms": 228.99010009132326,
+      "p95_ms": 318.89110000338405,
+      "p99_ms": 366.59019999206066
+    },
+    "recognition_single_face_ms": {
+      "count": 50,
+      "mean_ms": 250.13442399911582,
+      "median_ms": 246.71745003433898,
+      "stdev_ms": 32.36605833295536,
+      "min_ms": 208.66150001529604,
+      "max_ms": 415.2781000593677,
+      "p50_ms": 247.63620004523546,
+      "p95_ms": 301.4529999345541,
+      "p99_ms": 415.2781000593677
+    },
+    "expressions_single_face_ms": {
+      "count": 1,
+      "mean_ms": 0.0,
+      "median_ms": 0.0,
+      "stdev_ms": 0,
+      "min_ms": 0.0,
+      "max_ms": 0.0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0
+    },
+    "age_estimation_single_face_ms": {
+      "count": 1,
+      "mean_ms": 0.0,
+      "median_ms": 0.0,
+      "stdev_ms": 0,
+      "min_ms": 0.0,
+      "max_ms": 0.0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0
+    },
+    "full_pipeline_single_face_ms": {
+      "count": 30,
+      "mean_ms": 238.52202999793613,
+      "median_ms": 235.8809500001371,
+      "stdev_ms": 18.001123225818354,
+      "min_ms": 207.60020008310676,
+      "max_ms": 274.3146000429988,
+      "p50_ms": 236.53070000000298,
+      "p95_ms": 274.2097999434918,
+      "p99_ms": 274.3146000429988
+    },
+    "tracking_inter_frame_ms": {
+      "count": 100,
+      "mean_ms": 244.21880099573173,
+      "median_ms": 242.22534999717027,
+      "stdev_ms": 25.93826241206763,
+      "min_ms": 207.63049996457994,
+      "max_ms": 424.41440001130104,
+      "p50_ms": 242.29570000898093,
+      "p95_ms": 280.87870008312166,
+      "p99_ms": 424.41440001130104
+    },
+    "concurrent_20req_4workers_ms": {
+      "count": 20,
+      "mean_ms": 834.8839150043204,
+      "median_ms": 805.9744500205852,
+      "stdev_ms": 87.92859032572062,
+      "min_ms": 717.080199974589,
+      "max_ms": 1013.6019999627024,
+      "p50_ms": 808.206900022924,
+      "p95_ms": 1013.6019999627024,
+      "p99_ms": 1013.6019999627024
+    },
+    "batch_scaling_ms_per_face_count": {
+      "1": 243.65144997136667,
+      "2": 238.15985000692308,
+      "3": 253.54604999301955,
+      "4": 338.97650003200397,
+      "5": 279.7341499826871
+    }
+  }
+}
