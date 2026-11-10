@@ -18,18 +18,25 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
+
+      - name: Restore model cache
+        uses: actions/cache@v4
+        with:
+          path: models/
+          key: ${{ runner.os }}-face-models-${{ hashFiles('backend/scripts/download_models.py', 'models/model_manifest.json') }}
 
       - name: Install system dependencies
         run: |
@@ -40,6 +47,11 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Download and verify model weights
+        run: |
+          pip install uniface
+          python scripts/download_models.py
 
       - name: Run tests
         run: |
@@ -55,7 +67,25 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Restore model cache
+        uses: actions/cache@v4
+        with:
+          path: models/
+          key: ${{ runner.os }}-face-models-${{ hashFiles('backend/scripts/download_models.py', 'models/model_manifest.json') }}
+
+      - name: Download and verify model weights
+        working-directory: ./backend
+        run: |
+          pip install --upgrade pip
+          pip install onnxruntime uniface
+          python scripts/download_models.py
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

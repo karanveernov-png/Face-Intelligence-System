@@ -40,14 +40,18 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r backend/requirements.txt
 
-# 3. (Optional) Enable encryption at rest for biometric embeddings
+# 3. Download and validate model weights (not included in Git because of their size)
+pip install uniface
+python backend/scripts/download_models.py
+
+# 4. (Optional) Enable encryption at rest for biometric embeddings
 #    Generate keys once:
 #    python -c "import base64, secrets; print('FACE_ENCRYPTION_KEY=' + base64.b64encode(secrets.token_bytes(32)).decode()); print('FACE_ENCRYPTION_SALT=' + base64.b64encode(secrets.token_bytes(32)).decode())"
 #    Export them before running:
 export FACE_ENCRYPTION_KEY="your-generated-key"
 export FACE_ENCRYPTION_SALT="your-generated-salt"
 
-# 4. Run API server
+# 5. Run API server
 cd backend
 uvicorn app.main:app --reload
 
@@ -107,6 +111,9 @@ curl -X POST -H "X-API-Key: fi_admin_key" http://127.0.0.1:8000/api/faces/<face_
 ## Running Tests
 
 ```bash
+# If model weights are missing, download them from the repository root first:
+# python -m pip install uniface
+# python backend/scripts/download_models.py
 cd backend
 PYTHONPATH=. python -m pytest tests/ -q
 
