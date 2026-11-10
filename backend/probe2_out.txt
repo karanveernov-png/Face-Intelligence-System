@@ -1,0 +1,9 @@
+=== genderage.onnx: raw [0,255] input vs correct [-1,1] input ===
+  seed=0 RAW[0,255] (current code): raw_out=[-2.6216843  2.6216362  0.4947081] -> age=49.5 gender_logits=(-2.62,2.62) male=True gconf=99.5%
+  seed=0 NORM[-1,1] (correct): raw_out=[ 0.17296797 -0.1729433   0.3479717 ] -> age=34.8 gender_logits=(0.17,-0.17) male=False gconf=58.6%
+  seed=1 RAW[0,255] (current code): raw_out=[-2.5500793  2.550032   0.5286425] -> age=52.9 gender_logits=(-2.55,2.55) male=True gconf=99.4%
+  seed=1 NORM[-1,1] (correct): raw_out=[ 0.17306843 -0.17304373  0.3479606 ] -> age=34.8 gender_logits=(0.17,-0.17) male=False gconf=58.6%
+  seed=2 RAW[0,255] (current code): raw_out=[-2.4432473   2.443204    0.47013158] -> age=47.0 gender_logits=(-2.44,2.44) male=True gconf=99.3%
+  seed=2 NORM[-1,1] (correct): raw_out=[ 0.17290273 -0.17287809  0.34797454] -> age=34.8 gender_logits=(0.17,-0.17) male=False gconf=58.6%
+  seed=3 RAW[0,255] (current code): raw_out=[-2.71246    2.7124124  0.5101673] -> age=51.0 gender_logits=(-2.71,2.71) male=True gconf=99.6%
+  seed=3 NORM[-1,1] (correct): raw_out=[ 0.17319432 -0.17316957  0.34798187] -> age=34.8 gender_logits=(0.17,-0.17) male=False gconf=58.6%

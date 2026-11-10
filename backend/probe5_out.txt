@@ -1,0 +1,22 @@
+============================================================
+genderage.onnx IR: 7 opset: [12]
+  producer:  
+  meta props: []
+  #initializers: 161
+      scalar_op1 (1,) float32 min 127.5 max 127.5
+      scalar_op2 (1,) float32 min 0.0078125 max 0.0078125
+      conv_1_conv2d_weight (16, 3, 3, 3) float32 min -0.30535009503364563 max 0.2720295488834381
+      conv_1_batchnorm_gamma (16,) float32 min 1.0 max 1.0
+      conv_1_batchnorm_beta (16,) float32 min -1.0429881811141968 max 0.8686290383338928
+      conv_1_batchnorm_moving_mean (16,) float32 min -0.23355041444301605 max 0.2627766728401184
+============================================================
+fairface.onnx IR: 8 opset: [17]
+  producer: pytorch 2.8.0
+  meta props: []
+  #initializers: 74
+      fc.weight (18, 512) float32 min -0.13011227548122406 max 0.07359372824430466
+      fc.bias (18,) float32 min -0.032455600798130035 max 0.037971269339323044
+      onnx::Conv_377 (64, 3, 7, 7) float32 min -0.2782216966152191 max 0.28517743945121765
+      onnx::Conv_378 (64,) float32 min -0.6875823736190796 max 0.836739182472229
+      onnx::Conv_380 (64, 64, 3, 3) float32 min -0.38897156715393066 max 0.2595300078392029
+      onnx::Conv_381 (64,) float32 min -0.9371373057365417 max 1.1698403358459473

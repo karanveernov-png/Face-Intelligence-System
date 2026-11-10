@@ -1,0 +1,75 @@
+# Systemd Service for Face Intelligence API
+# Install: sudo cp face-intelligence.service /etc/systemd/system/
+# Enable: sudo systemctl daemon-reload && sudo systemctl enable --now face-intelligence
+
+[Unit]
+Description=Face Intelligence API - Local-first Face Analysis
+Documentation=https://github.com/your-repo/face-intelligence
+After=network.target
+Wants=network.target
+
+[Service]
+Type=notify
+# Run as dedicated user (create with: sudo useradd -r -s /bin/bash -d /opt/face-intelligence faceintel)
+User=faceintel
+Group=faceintel
+WorkingDirectory=/opt/face-intelligence
+
+# Environment
+Environment=PYTHONPATH=/opt/face-intelligence
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+# Virtual environment path
+Environment=VENV_PATH=/opt/face-intelligence/.venv
+
+# Gunicorn with Uvicorn workers - optimized for ONNX Runtime
+ExecStart=/opt/face-intelligence/.venv/bin/gunicorn \
+    -w 4 \
+    -k uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:8000 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --worker-tmp-dir /dev/shm \
+    --preload \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level info \
+    --capture-output \
+    --enable-stdio-inheritance \
+    backend.app.main:app
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Resource limits (adjust based on your server)
+MemoryMax=4G
+CPUQuota=200%
+TasksMax=512
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/face-intelligence/data /dev/shm
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false  # Required for ONNX Runtime JIT
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Standard output to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=face-intelligence
+
+[Install]
+WantedBy=multi-user.target

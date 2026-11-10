@@ -1,0 +1,62 @@
+/*
+  Design plan (see docs/ for the backend's own voice — this follows it):
+
+  Subject: a CV instrument for a developer/engineer inspecting model output,
+  not a consumer product. The honest, uncertainty-first tone of the backend
+  (every number ships with a caveat; "Unknown" and "uncertain" are real
+  states, not failures to hide) should read in the UI too.
+
+  Color: graphite base (not nnear-black-plus-neon), a desaturated measurement
+  teal for active/confident results, warm amber for uncertain ones, muted
+  brick only for destructive actions. Borrowed from lab-instrument and
+  oscilloscope readouts, not a cyberpunk/hacker palette.
+
+  Type: a technical monospace for anything that's a measurement (coordinates,
+  scores, latency, ids) paired with a plain grotesque sans for UI chrome —
+  two families, clearly distinct roles, not decoration.
+
+  Layout: the annotated preview is the hero (it's the one thing in this app
+  people actually came to look at), framed with corner-bracket viewfinder
+  marks — a motif borrowed directly from the subject matter (detection boxes
+  and camera viewfinders), not applied as generic decoration.
+*/
+
+:root {
+  --bg: #14171c;
+  --surface: #1b1f26;
+  --surface-raised: #222733;
+  --border: #2a3039;
+  --border-strong: #3a414d;
+
+  --text: #e7eaee;
+  --text-muted: #8b93a1;
+  --text-faint: #5c6472;
+
+  --accent: #5ec8b8;
+  --accent-soft: #5ec8b81a;
+  --accent-strong: #7fe0d0;
+
+  --warn: #d9a441;
+  --warn-soft: #d9a4411a;
+
+  --danger: #c65d4b;
+  --danger-soft: #c65d4b1a;
+
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, Menlo, monospace;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

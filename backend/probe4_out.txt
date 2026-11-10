@@ -1,0 +1,18 @@
+--- seed=0 ---
+  genderage (CURRENT, raw [0,255]): age=49.5 male=True gconf=99.5%
+  genderage (FIXED,   [-1,1]    ): age=34.8 male=False gconf=58.6%
+  fairface                         : age=13.376615669080643
+  _predict_single CURRENT          : age=31.4 range=25-32 unc=+-24.0 gender=male(99.5%)
+  ensemble WOULD BE                : age=24.1 range=25-32
+--- seed=1 ---
+  genderage (CURRENT, raw [0,255]): age=52.9 male=True gconf=99.4%
+  genderage (FIXED,   [-1,1]    ): age=34.8 male=False gconf=58.6%
+  fairface                         : age=14.160772056945964
+  _predict_single CURRENT          : age=33.5 range=38-43 unc=+-25.4 gender=male(99.4%)
+  ensemble WOULD BE                : age=24.5 range=25-32
+--- seed=2 ---
+  genderage (CURRENT, raw [0,255]): age=47.0 male=True gconf=99.3%
+  genderage (FIXED,   [-1,1]    ): age=34.8 male=False gconf=58.6%
+  fairface                         : age=15.28658198369854
+  _predict_single CURRENT          : age=31.1 range=25-32 unc=+-21.9 gender=male(99.3%)
+  ensemble WOULD BE                : age=25.0 range=25-32

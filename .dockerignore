@@ -1,0 +1,68 @@
+# .dockerignore - Exclude files from Docker build context
+# Reduces build time and image size
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.venv
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data (not needed in image, mounted at runtime)
+data/
+*.db
+*.sqlite
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+
+# Frontend (separate deployment)
+frontend/
+
+# Samples
+samples/
+
+# Test files not needed in production
+backend/tests/
+backend/*.py
+backend/probe*.py
+backend/verify*.py
+backend/final_verify.py
+
+# Kubernetes manifests (applied separately)
+k8s/
+
+# CI/CD
+.github/
+
+# Temporary files
+*.tmp
+*.temp

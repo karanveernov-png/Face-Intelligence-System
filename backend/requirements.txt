@@ -1,0 +1,27 @@
+# Core CV / numerics (`cv2.dnn.blobFromImages` batching + optical flow tracking)
+opencv-contrib-python-headless>=4.10.0,<5
+numpy>=1.26
+
+# Balanced Production Stack Inference Engine (~27 MB combined ONNX footprint)
+# Uses ONNX Runtime with CPUExecutionProvider / OpenVINOExecutionProvider
+# (automatic thread pooling and AVX2/AVX-512 vectorization; no PyTorch/TensorFlow required)
+onnxruntime>=1.18
+hsemotion-onnx>=0.3.1
+
+# (dlib-bin used to be required here for the age_resnet10_v1/gender_resnet10_v1
+# models' own 5-point chip alignment. age_estimation.py no longer loads those
+# models -- see its module docstring -- so nothing in app/ imports dlib
+# anymore, and the dependency was removed. `uniface` is needed only by
+# scripts/download_models.py, to fetch FairFace's weights; install it
+# separately with `pip install uniface` if you run that script, it is not a
+# runtime dependency of the backend itself.)
+
+# API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+python-multipart>=0.0.9
+
+# Testing
+pytest>=8.0
+httpx>=0.27

@@ -1,0 +1,4 @@
+=== Age estimation after revert ===
+  seed=0: genderage age=49.5 male=True gconf=99.5% | fairface age=13.4 | ensemble age=31.4 range=25-32 gender=male(99.5%)
+  seed=1: genderage age=52.9 male=True gconf=99.4% | fairface age=14.2 | ensemble age=33.5 range=38-43 gender=male(99.4%)
+  seed=2: genderage age=47.0 male=True gconf=99.3% | fairface age=15.3 | ensemble age=31.1 range=25-32 gender=male(99.3%)

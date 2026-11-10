@@ -1,0 +1,15 @@
+=== Age Estimation Verification ===
+  seed=0: genderage=49.5 male=True gconf=99.5% | fairface=13.4 | ensemble=31.4 range=25-32 gender=male(99.5%)
+  seed=1: genderage=52.9 male=True gconf=99.4% | fairface=14.2 | ensemble=33.5 range=38-43 gender=male(99.4%)
+  seed=2: genderage=47.0 male=True gconf=99.3% | fairface=15.3 | ensemble=31.1 range=25-32 gender=male(99.3%)
+Traceback (most recent call last):
+  File "D:\Opne CV\face-intelligence\face-intelligence\backend\final_verify.py", line 108, in <module>
+    test_age_estimation()
+    ~~~~~~~~~~~~~~~~~~~^^
+  File "D:\Opne CV\face-intelligence\face-intelligence\backend\final_verify.py", line 43, in test_age_estimation
+    print("  \u2713 Age estimation restored to original behavior (ensemble ~31-33 on synthetic)")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksnam\AppData\Local\Python\pythoncore-3.14-64\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>

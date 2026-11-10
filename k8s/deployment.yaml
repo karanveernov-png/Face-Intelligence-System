@@ -1,0 +1,248 @@
+# Kubernetes Deployment for Face Intelligence API
+# Apply with: kubectl apply -f k8s/
+
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: face-intelligence
+  labels:
+    name: face-intelligence
+
+---
+# ConfigMap for non-sensitive config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: face-intelligence-config
+  namespace: face-intelligence
+data:
+  PYTHONPATH: "/app"
+  PYTHONUNBUFFERED: "1"
+  DETECTION_INTERVAL: "3"
+  TEMPORAL_EMA_ALPHA: "0.4"
+  BATCH_INFERENCE_ENABLED: "true"
+  ONNX_INTRA_OP_THREADS: "4"
+  ONNX_INTER_OP_THREADS: "1"
+
+---
+# PersistentVolumeClaim for models (read-only) and data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: face-models-pvc
+  namespace: face-intelligence
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: face-data-pvc
+  namespace: face-intelligence
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: face-intelligence-api
+  namespace: face-intelligence
+  labels:
+    app: face-intelligence-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: face-intelligence-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: face-intelligence-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: api
+          image: your-registry/face-intelligence:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: face-intelligence-config
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "3Gi"
+          volumeMounts:
+            - name: models
+              mountPath: /app/models
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+            - name: shm
+              mountPath: /dev/shm
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: face-models-pvc
+        - name: data
+          persistentVolumeClaim:
+            claimName: face-data-pvc
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: face-intelligence-api
+  namespace: face-intelligence
+  labels:
+    app: face-intelligence-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: face-intelligence-api
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: face-intelligence-hpa
+  namespace: face-intelligence
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: face-intelligence-api
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max
+
+---
+# Ingress (requires NGINX Ingress Controller)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: face-intelligence-ingress
+  namespace: face-intelligence
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/websocket-services: "face-intelligence-api"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+spec:
+  tls:
+    - hosts:
+        - your-domain.com
+      secretName: face-intelligence-tls
+  rules:
+    - host: your-domain.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: face-intelligence-api
+                port:
+                  number: 8000

@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.pytest_cache/
+
+# Runtime data — never commit biometric data
+data/embeddings/*.json
+data/gallery/*
+data/tmp_uploads/*
+!data/embeddings/.gitkeep
+!data/gallery/.gitkeep
+!data/tmp_uploads/.gitkeep
+
+# Downloaded model weights (large; fetched automatically on first run)
+*.onnx
+*.h5
+
+# Frontend (when added)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
