@@ -11,8 +11,9 @@ services:
     environment:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-    ports:
-      - "8000:8000"
+    # No ports exposed - API is internal only, accessed via nginx
+    # ports:
+    #   - "8000:8000"
     volumes:
       # Models are read-only in production; override for development
       - ./models:/app/models:ro
@@ -40,6 +41,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Security: run as non-root, drop capabilities
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   nginx:
     image: nginx:alpine
@@ -60,6 +67,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    # Security
+    user: "nginx"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   # Optional: Certbot for automatic HTTPS
   certbot:

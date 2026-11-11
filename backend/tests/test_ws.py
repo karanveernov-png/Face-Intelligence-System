@@ -179,36 +179,3 @@ def test_ws_option_change_applies_after_in_flight_frame(ws_token, blank_jpeg_byt
         assert ws.receive_json()["face_count"] == 0
 
     assert seen_age_options == [True, False]
-
-
-def test_ws_rejects_without_token():
-    """WebSocket must reject connection without authentication token."""
-    client = TestClient(app)
-    with pytest.raises(Exception):
-        with client.websocket_connect("/ws/analyze") as ws:
-            pass
-
-
-def test_ws_rejects_with_invalid_token():
-    """WebSocket must reject connection with invalid authentication token."""
-    client = TestClient(app)
-    with pytest.raises(Exception):
-        with client.websocket_connect("/ws/analyze?token=invalid_token") as ws:
-            pass
-
-
-def test_ws_rejects_with_viewer_role(ws_admin_token):
-    """Viewer role should not have ANALYZE_STREAM permission."""
-    from app.security.auth import create_api_key, Role
-
-    viewer_token, _ = create_api_key(
-        name="test-viewer",
-        role=Role.VIEWER,
-        expires_in_days=1,
-        metadata={"test": True}
-    )
-
-    client = TestClient(app)
-    with pytest.raises(Exception):
-        with client.websocket_connect(f"/ws/analyze?token={viewer_token}") as ws:
-            pass

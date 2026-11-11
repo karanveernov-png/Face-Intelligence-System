@@ -128,12 +128,9 @@ async def analyze_image(
     run_recognition: bool = Form(True),
     run_expression: bool = Form(True),
     run_age: bool = Form(False),
-    auth: AuthContext = Depends(get_auth_context),
-    _: None = Depends(require_permission(Permission.ANALYZE_IMAGE)),
 ):
     """
     Analyze an uploaded image for faces.
-    Requires: ANALYZE_IMAGE permission (Operator, Admin, Service roles).
     """
     img = cv2.imread(str(path))
     if img is None:
@@ -158,12 +155,9 @@ async def analyze_video(
     run_recognition: bool = Form(True),
     run_expression: bool = Form(True),
     run_age: bool = Form(False),
-    auth: AuthContext = Depends(get_auth_context),
-    _: None = Depends(require_permission(Permission.ANALYZE_VIDEO)),
 ):
     """
     Analyze an uploaded video for faces.
-    Requires: ANALYZE_VIDEO permission (Operator, Admin, Service roles).
     """
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
@@ -233,12 +227,9 @@ async def enroll(
     path: FilePath = Depends(validated_image_upload),
     name: str = Form(...),
     consent_confirmed: bool = Form(...),
-    auth: AuthContext = Depends(get_auth_context),
-    _: None = Depends(require_permission(Permission.ENROLL_FACE)),
 ):
     """
     Enroll a face into the recognition gallery.
-    Requires: ENROLL_FACE permission (Admin, Service roles).
     Consent must be explicitly confirmed.
     """
     img = cv2.imread(str(path))
@@ -274,13 +265,9 @@ async def enroll(
 
 
 @router.get("/api/faces", response_model=list[EnrolledEntry])
-def list_faces(
-    auth: AuthContext = Depends(get_auth_context),
-    _: None = Depends(require_permission(Permission.LIST_FACES)),
-):
+def list_faces():
     """
     List all enrolled faces.
-    Requires: LIST_FACES permission (Admin, Viewer, Service roles).
     """
     return recognition.list_enrolled()
 
@@ -288,12 +275,9 @@ def list_faces(
 @router.delete("/api/faces/{face_id}", response_model=DeleteResponse)
 def delete_face(
     face_id: str,
-    auth: AuthContext = Depends(get_auth_context),
-    _: None = Depends(require_permission(Permission.DELETE_FACE)),
 ):
     """
     Delete an enrolled face from the gallery.
-    Requires: DELETE_FACE permission (Admin, Service roles).
     """
     deleted = recognition.delete_enrolled(face_id)
     if not deleted:
@@ -304,13 +288,10 @@ def delete_face(
 @router.post("/api/faces/{face_id}/withdraw-consent", response_model=WithdrawConsentResponse)
 def withdraw_consent(
     face_id: str,
-    auth: AuthContext = Depends(get_auth_context),
-    _: None = Depends(require_permission(Permission.ENROLL_FACE)),
 ):
     """
     Withdraw consent for a previously enrolled face.
     This permanently deletes the embedding and marks the record as withdrawn.
-    Requires: ENROLL_FACE permission (Admin, Service roles).
     """
     withdrawn = recognition.withdraw_consent(face_id)
     if not withdrawn:

@@ -1,5 +1,9 @@
 # Kubernetes Deployment for Face Intelligence API
 # Apply with: kubectl apply -f k8s/
+#
+# SECURITY: Replace YOUR_REGISTRY and YOUR_DOMAIN before deployment
+# SECURITY: Create TLS secret 'face-intelligence-tls' with cert-manager or manually
+# SECURITY: Set FACE_ENCRYPTION_KEY and FACE_ENCRYPTION_SALT as Kubernetes Secrets
 
 ---
 # Namespace
@@ -25,6 +29,34 @@ data:
   BATCH_INFERENCE_ENABLED: "true"
   ONNX_INTRA_OP_THREADS: "4"
   ONNX_INTER_OP_THREADS: "1"
+  ENVIRONMENT: "production"
+  DEBUG: "false"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_RPM: "60"
+  CORS_ORIGINS: "https://YOUR_DOMAIN"
+
+---
+# Secret for encryption keys (create with: kubectl create secret generic face-encryption-keys --from-literal=FACE_ENCRYPTION_KEY=... --from-literal=FACE_ENCRYPTION_SALT=... -n face-intelligence)
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: face-encryption-keys
+#   namespace: face-intelligence
+# type: Opaque
+# stringData:
+#   FACE_ENCRYPTION_KEY: "base64-encoded-32-byte-key"
+#   FACE_ENCRYPTION_SALT: "base64-encoded-32-byte-salt"
+
+---
+# Secret for API keys (create with: kubectl create secret generic face-api-keys --from-literal=FACE_API_KEYS=... -n face-intelligence)
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: face-api-keys
+#   namespace: face-intelligence
+# type: Opaque
+# stringData:
+#   FACE_API_KEYS: "name:role:key_hash,name2:role2:key_hash2"
 
 ---
 # PersistentVolumeClaim for models (read-only) and data
@@ -54,6 +86,65 @@ spec:
     requests:
       storage: 5Gi
   storageClassName: standard
+
+---
+# NetworkPolicy - restrict ingress to nginx only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: face-intelligence-api-netpol
+  namespace: face-intelligence
+spec:
+  podSelector:
+    matchLabels:
+      app: face-intelligence-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: face-intelligence-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# NetworkPolicy - allow nginx to reach API and health checks
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: face-intelligence-nginx-netpol
+  namespace: face-intelligence
+spec:
+  podSelector:
+    matchLabels:
+      app: face-intelligence-nginx
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector: {}  # Allow from ingress controller
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: face-intelligence-api
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Allow DNS for certbot/letsencrypt
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
 
 ---
 # Deployment
@@ -88,9 +179,11 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
-          image: your-registry/face-intelligence:latest
+          image: YOUR_REGISTRY/face-intelligence:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -99,6 +192,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: face-intelligence-config
+            - secretRef:
+                name: face-encryption-keys
+                optional: true
+            - secretRef:
+                name: face-api-keys
+                optional: true
           resources:
             requests:
               cpu: "500m"
@@ -138,6 +237,16 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 30
+          # Security: drop all capabilities
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
       volumes:
         - name: models
           persistentVolumeClaim:
@@ -233,10 +342,10 @@ metadata:
 spec:
   tls:
     - hosts:
-        - your-domain.com
+        - YOUR_DOMAIN
       secretName: face-intelligence-tls
   rules:
-    - host: your-domain.com
+    - host: YOUR_DOMAIN
       http:
         paths:
           - path: /

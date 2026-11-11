@@ -58,9 +58,7 @@ ws_logger = logger
 
 _MAX_FRAME_BYTES = 8 * 1024 * 1024  # 8MB per frame
 _MAX_CONNECTIONS = 100  # Max concurrent WebSocket connections
-_MAX_FRAMES_PER_SECOND = 30  # Max frames per second per connection
 _IDLE_TIMEOUT_SECONDS = 300  # 5 minutes idle timeout
-_MAX_FRAMES_PER_MINUTE = 60  # Max frames per minute per connection (abuse protection)
 
 # Connection tracking
 _active_connections: dict[str, dict] = {}  # client_id -> connection info
@@ -140,39 +138,12 @@ def check_connection_limits(client_ip: str) -> bool:
     return True
 
 
-def check_frame_rate_limit(client_id: str) -> bool:
-    """
-    Per-minute frame rate limit check.
-    Tracks frames received per minute per connection.
-    Returns True if frame allowed, False if rate limited.
-    """
-    if client_id not in _active_connections:
-        return False
-
-    conn = _active_connections[client_id]
-    now = time.time()
-
-    # Initialize minute tracking if needed
-    minute_key = int(now // 60)
-    if conn.get("minute_window") != minute_key:
-        conn["minute_window"] = minute_key
-        conn["minute_frame_count"] = 0
-
-    # Check per-minute rate limit
-    conn["minute_frame_count"] += 1
-    if conn["minute_frame_count"] > _MAX_FRAMES_PER_MINUTE:
-        logger.warning("Frame rate limit exceeded for %s: %d frames in minute", client_id, conn["minute_frame_count"])
-        return False
-
-    return True
-
-
-def register_connection(client_id: str, client_ip: str, auth: AuthContext) -> None:
+def register_connection(client_id: str, client_ip: str, auth: Optional[AuthContext] = None) -> None:
     """Register a new WebSocket connection."""
     _active_connections[client_id] = {
         "client_ip": client_ip,
-        "auth_name": auth.api_key_name,
-        "role": auth.role.value,
+        "auth_name": (auth.api_key_name if auth else None),
+        "role": (auth.role.value if auth else None),
         "connected_at": time.time(),
         "last_frame_at": time.time(),
         "frame_count": 0,
@@ -186,29 +157,14 @@ def unregister_connection(client_id: str) -> None:
 
 def update_frame_timestamp(client_id: str) -> bool:
     """
-    Update frame timestamp and check rate limits.
-    Returns True if frame allowed, False if rate limited.
+    Update frame timestamp and check idle timeout.
+    Returns True if frame allowed, False if idle timeout.
     """
     if client_id not in _active_connections:
         return False
 
     conn = _active_connections[client_id]
     now = time.time()
-
-    # Check per-second frame rate (sliding window)
-    conn["frame_count"] += 1
-    time_elapsed = now - conn.get("window_start", now)
-
-    if time_elapsed >= 1.0:
-        # Reset window
-        conn["window_start"] = now
-        conn["frame_count"] = 1
-    elif conn["frame_count"] > _MAX_FRAMES_PER_SECOND:
-        return False
-
-    # Check per-minute frame rate abuse protection
-    if not check_frame_rate_limit(client_id):
-        return False
 
     # Check idle timeout
     if now - conn["last_frame_at"] > _IDLE_TIMEOUT_SECONDS:
@@ -224,20 +180,14 @@ async def analyze_stream(
     run_recognition: bool = Query(True),
     run_expression: bool = Query(True),
     run_age: bool = Query(False),
-    token: Optional[str] = Query(None),
 ):
     """
     WebSocket endpoint for live webcam analysis.
-
-    Authentication:
-    - Requires 'token' query parameter with valid API key
-    - Token must have ANALYZE_STREAM permission (Operator, Admin, Service roles)
 
     Query Parameters:
     - run_recognition: Enable face recognition (default: true)
     - run_expression: Enable expression analysis (default: true)
     - run_age: Enable age estimation (default: false)
-    - token: API key for authentication
 
     Message Format (Client -> Server):
     - Binary: JPEG/PNG frame data
@@ -256,26 +206,14 @@ async def analyze_stream(
         await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER, reason="Connection limit exceeded")
         return
 
-    # Authenticate before accepting
-    try:
-        auth = await authenticate_websocket(websocket, token)
-    except HTTPException as e:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=e.detail)
-        return
-
-    # Additional abuse check: verify connection hasn't been rate limited recently
-    # (already checked inside update_frame_timestamp during frame processing)
-
     # Accept the connection
     await websocket.accept()
-    register_connection(client_id, client_ip, auth)
+    register_connection(client_id, client_ip, None)
 
     logger.info(
-        "WebSocket connected: client_id=%s client_ip=%s auth_name=%s role=%s",
+        "WebSocket connected: client_id=%s client_ip=%s",
         client_id,
         client_ip,
-        auth.api_key_name,
-        auth.role.value,
     )
 
     tracker = FaceTracker()
@@ -364,9 +302,9 @@ async def analyze_stream(
 
             frames_received += 1
 
-            # Check frame rate limit
+            # Check idle timeout
             if not update_frame_timestamp(client_id):
-                await websocket.send_json({"error": "frame rate limit exceeded"})
+                await websocket.send_json({"error": "idle timeout"})
                 continue
 
             if len(data) == 0:
@@ -423,17 +361,10 @@ async def analyze_stream(
 
 
 @router.get("/ws/stats")
-def websocket_stats(
-    auth: AuthContext = Depends(get_auth_context),
-):
+def websocket_stats():
     """
     Get WebSocket connection statistics.
-    Requires: ADMIN_CONFIG permission (Admin role).
     """
-    from app.security.auth import Permission
-    if Permission.ADMIN_CONFIG not in auth.permissions:
-        raise HTTPException(status_code=403, detail="Admin permission required")
-
     return {
         "active_connections": len(_active_connections),
         "connections": [

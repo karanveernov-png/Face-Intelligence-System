@@ -55,6 +55,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8000
 
 # Gunicorn with Uvicorn workers - optimized for ONNX Runtime
+# Note: binds to 0.0.0.0 within the container so nginx (in a separate
+# container) can proxy to it via the Docker network. The port is NOT
+# published to the host (no `ports:` mapping in docker-compose.yml),
+# so external traffic reaches the API only through nginx over HTTPS.
 CMD ["gunicorn", \
      "-w", "4", \
      "-k", "uvicorn.workers.UvicornWorker", \

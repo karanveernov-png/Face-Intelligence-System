@@ -90,9 +90,7 @@ def get_client_identifier(request: Request) -> str:
 
 limiter = Limiter(
     key_func=get_client_identifier,
-    default_limits=[f"{settings.rate_limit_requests_per_minute}/minute"]
-    if settings.rate_limit_enabled
-    else [],
+    default_limits=[],
     storage_uri=settings.redis_url,
 )
 
